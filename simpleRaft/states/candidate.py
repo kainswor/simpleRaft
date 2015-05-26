@@ -28,6 +28,7 @@ class Candidate(Voter):
                 from .leader import Leader
                 leader = Leader(timeout=self._timeout)
                 leader.set_server(self._server)
+                leader._last_vote = self._last_vote
                 leader._send_heart_beat()
                 return leader, None
         return self, None

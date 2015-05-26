@@ -1,4 +1,5 @@
-import time
+#!/usr/bin/python
+
 import random
 
 from ..messages.base import BaseMessage
@@ -46,24 +47,29 @@ class State(object):
 
     def on_leader_timeout(self):
         """This is called when the leader timeout is reached."""
+        raise NotImplemented
 
     def on_vote_request(self, message):
         """This is called when there is a vote request."""
+        return self, None
 
     def on_vote_received(self, message):
         """This is called when this node recieves a vote."""
+        return self, None
 
     def on_append_entries(self, message):
         """This is called when there is a request to
         append an entry to the log.
-
         """
+        raise NotImplemented
 
     def on_response_received(self, message):
         """This is called when a response is sent back to the Leader"""
+        return self, None
 
     def on_client_command(self, message):
         """This is called when there is a client request."""
+        return self, None
 
     @property
     def timeout(self):

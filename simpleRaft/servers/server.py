@@ -1,3 +1,6 @@
+#!/usr/bin/python
+from ..states.leader import Leader
+
 import zmq
 import threading
 import pickle
@@ -67,6 +70,16 @@ class Server(threading.Thread):
 
     def stop(self):
         self._run = False
+
+    @property
+    def is_leader(self):
+        ''' a simple leadership interface '''
+        return issubclass(type(self._state), Leader)
+
+    @property
+    def leader(self):
+        ''' expose the current estimate of leader '''
+        return self._state._last_vote
 
 class ZeroMQPeer(Server):
     '''

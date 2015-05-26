@@ -91,6 +91,7 @@ class Follower(Voter):
                         self._send_response_message(message)
                     else:
                         self._last_heartbeat = time.time()
+                        self._last_vote = data['leaderId']
 
             self._send_response_message(message)
             return self, None

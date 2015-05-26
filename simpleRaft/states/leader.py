@@ -13,7 +13,6 @@ class Leader(Voter):
 
     def set_server(self, server):
         self._server = server
-        #self._send_heart_beat()
 
         for n in self._server._neighbors:
             self._nextIndexes[n._name] = self._server._lastLogIndex + 1

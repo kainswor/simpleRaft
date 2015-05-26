@@ -28,6 +28,7 @@ if __name__ == '__main__':
             print 1, server1.publishThread.is_alive(), server1.subscribeThread.is_alive(), server1._state
         print 2, server2.publishThread.is_alive(), server2.subscribeThread.is_alive(), server2._state
         print 3, server3.publishThread.is_alive(), server3.subscribeThread.is_alive(), server3._state
+        print server3.is_leader, server3.leader
 
         if server1 and issubclass(type(server1._state), Leader):
             print 'Halting 1'
