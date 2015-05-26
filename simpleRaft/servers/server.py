@@ -1,14 +1,19 @@
 import zmq
 import threading
+import pickle
+import Queue
+import time
 
-
-class Server(object):
+class Server(threading.Thread):
 
     def __init__(self, name, state, log, messageBoard, neighbors):
+        super(Server, self).__init__()
+        self.daemon = True
         self._name = name
         self._state = state
         self._log = log
         self._messageBoard = messageBoard
+        self._messagelock = threading.Lock()
         self._neighbors = neighbors
         self._total_nodes = 0
 
@@ -21,7 +26,8 @@ class Server(object):
         self._lastLogTerm = None
 
         self._state.set_server(self)
-        self._messageBoard.set_owner(self)
+        if self._messageBoard:
+            self._messageBoard.set_owner(self)
 
     def send_message(self, message):
         for n in self._neighbors:
@@ -37,38 +43,77 @@ class Server(object):
         self._messageBoard.post_message(message)
 
     def on_message(self, message):
-        state, response = self._state.on_message(message)
+        with self._messagelock:
+            try:
+                state, response = self._state.on_message(message)
 
-        self._state = state
+                #print self._state.__dict__, state.__dict__, message.__dict__
+                self._state = state
+            except Exception as exc:
+                print repr(exc)
+                print self._state, message, message.__dict__
 
+    def run(self):
+        while True:
+            ts = time.time()
+            time.sleep(self._state.timeout)
+            if self._state._last_heartbeat < ts:
+                with self._messagelock:
+                    state, response = self._state.on_leader_timeout()
+                    #print state, response
+                    self._state = state
+
+class ZeroMQPeer(Server):
+    '''
+    Simple mock up for creating cluster definitions of remote nodes
+    (We don't want to actually set up a server)
+    '''
+    def __init__(self, name, host='localhost', port=6666):
+        self._name = name
+        self._host = host
+        self._port = port
 
 class ZeroMQServer(Server):
-    def __init__(self, name, state, log, messageBoard, neighbors, port=6666):
-        super(ZeroMQServer, self).__init__(name, state, log, messageBoard, neighbors)
-        self._port = 6666
+
+    def __init__(self, name, state, log, neighbors, host='localhost', port=6666):
+        # Modified super args to prevent starting the beast!
+        super(ZeroMQServer, self).__init__(name, state, log, None, neighbors)
+        self._host = host
+        self._port = port
+        self._context = zmq.Context()
+        self._context.setsockopt(zmq.LINGER, 0)
+        self._pub_queue = Queue.Queue()
 
         class SubscribeThread(threading.Thread):
             def run(thread):
-                context = zmq.Context()
-                socket = context.socket(zmq.SUB)
+                socket = self._context.socket(zmq.SUB)
+                socket.connect("tcp://%s:%d" % (self._host, self._port))
                 for n in neighbors:
-                    socket.connect("tcp://%s:%d" % (n._name, n._port))
+                    socket.connect("tcp://%s:%d" % (n._host, n._port))
+                socket.setsockopt(zmq.SUBSCRIBE, '')
 
                 while True:
-                    message = socket.recv()
-                    self.on_message(message)
+                    try:
+                        message = socket.recv(zmq.NOBLOCK)
+                        message = pickle.loads(message)
+                        #print '%s RECEIVED: %s' % (self._name, repr(message.__dict__))
+                        # assert issubclass(message, BaseMessage)
+                        if message.receiver == self._name or message.receiver == '*':
+                            self.on_message(message)
+                    except zmq.ZMQError:
+                        import time
+                        time.sleep(0.1)
 
         class PublishThread(threading.Thread):
             def run(thread):
-                context = zmq.Context()
-                socket = context.socket(zmq.PUB)
+                socket = self._context.socket(zmq.PUB)
                 socket.bind("tcp://*:%d" % self._port)
 
                 while True:
-                    message = self._messageBoard.get_message()
-                    if not message:
-                        continue # sleep wait?
-                    socket.send(message)
+                    message = self._pub_queue.get()
+                    #print '%s PUBLISHING: %s' % (self._name, repr(message.__dict__))
+                    socket.send(pickle.dumps(message))
+        
 
         self.subscribeThread = SubscribeThread()
         self.publishThread = PublishThread()
@@ -77,3 +122,17 @@ class ZeroMQServer(Server):
         self.subscribeThread.start()
         self.publishThread.daemon = True
         self.publishThread.start()
+
+    def send_message(self, message):
+        '''
+        Enqueues message for broadcast, overwriting receiver field to '*'
+        '''
+        message._receiver = '*'
+        self._pub_queue.put(message)
+
+
+    def send_message_response(self, message):
+        '''
+        Enqueues for a broadcast, without overwriting receiver field
+        '''
+        self._pub_queue.put(message)

@@ -5,7 +5,8 @@ from ..messages.request_vote import RequestVoteResponseMessage
 
 class Voter(State):
 
-    def __init__(self):
+    def __init__(self, timeout=1.0):
+        super(Voter, self).__init__(timeout=timeout)
         self._last_vote = None
 
     def on_vote_request(self, message):
