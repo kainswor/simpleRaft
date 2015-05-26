@@ -1,6 +1,7 @@
 #!/usr/bin/python
 from simpleRaft.servers.server import ZeroMQPeer, ZeroMQServer
 from simpleRaft.states.follower import Follower
+from simpleRaft.states.leader import Leader
 
 import time
 
@@ -23,8 +24,13 @@ server3.start()
 if __name__ == '__main__':
     while True:
         time.sleep(5)
-        print server1.publishThread.is_alive(), server1.subscribeThread.is_alive(), server1._state
-        print server2.publishThread.is_alive(), server2.subscribeThread.is_alive(), server2._state
-        print server3.publishThread.is_alive(), server3.subscribeThread.is_alive(), server3._state
+        if server1:
+            print 1, server1.publishThread.is_alive(), server1.subscribeThread.is_alive(), server1._state
+        print 2, server2.publishThread.is_alive(), server2.subscribeThread.is_alive(), server2._state
+        print 3, server3.publishThread.is_alive(), server3.subscribeThread.is_alive(), server3._state
 
+        if server1 and issubclass(type(server1._state), Leader):
+            print 'Halting 1'
+            server1.stop()
+            server1 = None
 # ... Profit?

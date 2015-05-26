@@ -1,9 +1,9 @@
 from collections import defaultdict
-from .state import State
+from .voter import Voter
 from ..messages.append_entries import AppendEntriesMessage
 
 
-class Leader(State):
+class Leader(Voter):
 
     def __init__(self, timeout=1.0):
         super(Leader, self).__init__(timeout=timeout)
