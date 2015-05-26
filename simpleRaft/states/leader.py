@@ -1,6 +1,7 @@
 from collections import defaultdict
 from .voter import Voter
 from ..messages.append_entries import AppendEntriesMessage
+from ..messages.client import ClientMessage, ClientLeaderResponse
 
 
 class Leader(Voter):
@@ -85,3 +86,10 @@ class Leader(Voter):
                 "leaderCommit": self._server._commitIndex,
             })
         self._server.send_message(message)
+
+    def on_client_message(self, message):
+        if message.command == ClientMessage.Leader:
+            return ClientLeaderResponse(message.sender, self._server._name, True)
+        else:
+            #TODO: Raft lol
+            raise NotImplemented

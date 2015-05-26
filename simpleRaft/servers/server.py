@@ -1,11 +1,13 @@
 #!/usr/bin/python
 from ..states.leader import Leader
+from ..messages.client import ClientMessage
 
 import zmq
 import threading
 import pickle
 import Queue
 import time
+import math
 
 class Server(threading.Thread):
 
@@ -86,17 +88,66 @@ class ZeroMQPeer(Server):
     Simple mock up for creating cluster definitions of remote nodes
     (We don't want to actually set up a server)
     '''
-    def __init__(self, name, host='127.0.0.1', port=6666):
+    def __init__(self, name, host='127.0.0.1', port=6666, client_port=5000):
         self._name = name
         self._host = host
         self._port = port
+        self._client_port = client_port
+
+class ZeroMQClient(object):
+    def __init__(self, neighbors, client_id='client', timeout=5):
+        self._client_id = client_id
+        self._neighbors = neighbors
+        self._context = zmq.Context()
+        self._context.setsockopt(zmq.LINGER, 0)
+        self._timeout = 5
+
+    @property
+    def quorum(self):
+        return math.ceil(0.5 * len(self._neighbors))
+
+    @property
+    def leader(self):
+        ''' Sends a Leader request to all nodes, establishing leader by quorum '''
+        votes = {}
+        sockets = []
+        for n in self._neighbors:
+            sock = self._context.socket(zmq.REQ)
+            sock.connect("tcp://%s:%d" % (n._host, n._client_port))
+            message = ClientMessage(self._client_id, n._host, n._client_port, ClientMessage.Leader)
+            sock.send(pickle.dumps(message))
+            sockets.append(sock)
+
+        # Poll for responses
+        poller = zmq.Poller()
+        for socket in sockets:
+            poller.register(socket, zmq.POLLIN)
+        start = time.time()
+        while time.time() < start + self._timeout:
+            socks = dict(poller.poll())
+            for sock in sockets:
+                if sock in socks and socks[sock] == zmq.POLLIN:
+                    message = sock.recv()
+                    message = pickle.loads(message)
+                    if message.leader in votes:
+                        votes[message.leader] += 1
+                    else:
+                        votes[message.leader] = 1
+                    if votes[message.leader] > self.quorum:
+                        # break if we have enough votes
+                        return message.leader 
+        print votes
+        # If nobody received a quorum's consensus
+        return None
 
 class ZeroMQServer(Server):
 
-    def __init__(self, name, state, log, neighbors, host='127.0.0.1', port=6666):
+    def __init__(self, name, state, log, neighbors, host='127.0.0.1', port=6666, client_port=5000):
         # Modified super args to prevent starting the beast!
         super(ZeroMQServer, self).__init__(name, state, log, None, neighbors)
+        self._client_port = client_port
         self._host = host
+        assert port != self._client_port
         self._port = port
         self._context = zmq.Context()
         self._context.setsockopt(zmq.LINGER, 0)
@@ -132,14 +183,28 @@ class ZeroMQServer(Server):
                     #print '%s PUBLISHING: %s' % (self._name, repr(message.__dict__))
                     socket.send(pickle.dumps(message))
         
+        class ClientThread(threading.Thread):
+            def run(thread):
+                socket = self._context.socket(zmq.REP)
+                socket.bind("tcp://*:%d" % self._client_port)
+
+                while self._run:
+                    message = socket.recv()
+                    message = pickle.loads(message)
+                    print message
+                    response = self._state.on_client_message(message)
+                    socket.send(pickle.dumps(response))
 
         self.subscribeThread = SubscribeThread()
         self.publishThread = PublishThread()
+        self.clientThread = ClientThread()
 
         self.subscribeThread.daemon = True
         self.subscribeThread.start()
         self.publishThread.daemon = True
         self.publishThread.start()
+        self.clientThread.daemon = True
+        self.clientThread.start()
 
     def send_message(self, message):
         '''

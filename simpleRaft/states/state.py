@@ -69,7 +69,7 @@ class State(object):
 
     def on_client_command(self, message):
         """This is called when there is a client request."""
-        return self, None
+        raise NotImplemented
 
     @property
     def timeout(self):
